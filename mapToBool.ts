@@ -18,5 +18,4 @@ type mapToBool<T> = T extends Array<{}>
 		? { [Property in keyof T]: mapToBool<T[Property]> }
 		: boolean;
 
-
 type SelectedBoolean = mapToBool<MySourceType>;
