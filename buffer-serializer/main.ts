@@ -4,6 +4,7 @@ import { BufferSchema } from './type';
 const userSchema: BufferSchema = {
 	id: 'string',
 	age: 'u32',
+	performanceCoefficient: 'double',
 	posts: {
 		id: 'string',
 		text: 'string',
@@ -17,8 +18,6 @@ const serializer = new BufferSerializer(userSchema);
 const buffer = serializer.toBuffer({
 	id: 'u1',
 	age: 30,
-	favorites: [1, 2, 3],
-	debt: -3150,
 	performanceCoefficient: 1.5,
 	posts: [
 		{

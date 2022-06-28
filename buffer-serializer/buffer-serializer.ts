@@ -1,4 +1,4 @@
-import { BufferSchema, NumberTypes, NumberTypesEnum } from './type';
+import { BufferSchema, NumberTypes, NumberTypesEnum, DataType, AvailableTypes, NestedDataObject } from './type';
 import { BufferWriter } from './buffer-writer';
 import { BufferReader } from './buffer-reader';
 
@@ -11,7 +11,7 @@ export default class BufferSerializer {
 		this.schema = schema;
 	}
 
-	toBuffer(data: unknown): Buffer {
+	toBuffer(data: DataType): Buffer {
 		this.buffWriter = new BufferWriter();
 
 		this.serializeToBufferInternal(data);
@@ -79,10 +79,10 @@ export default class BufferSerializer {
 		throw new Error(`Unknown code: ${code}`);
 	}
 
-	private serializeToBufferInternal(data: unknown): void {
+	private serializeToBufferInternal(data: DataType | AvailableTypes): void {
 		switch (typeof data) {
 			case 'object':
-				this.toBufferInternalObject(data);
+				this.toBufferInternalObject(data as DataType);
 				break;
 			case 'string':
 				this.toBufferInternalString(data);
@@ -98,8 +98,8 @@ export default class BufferSerializer {
 		}
 	}
 
-	private serializeToTypedBuffer(data: unknown, key: string, nestedKey?: string): void {
-		let schemaType = this.schema[key];
+	private serializeToTypedBuffer(data: DataType | AvailableTypes, key: string, nestedKey?: string): void {
+		let schemaType = this.schema[key] as string;
 
 		if (nestedKey) {
 			schemaType = this.schema[nestedKey][key];
@@ -109,37 +109,41 @@ export default class BufferSerializer {
 			return this.serializeToBufferInternal(data);
 		}
 
-		if (Object.keys(NumberTypesEnum).includes(schemaType as string)) {
-			if (data > 0) {
-				this.buffWriter.number(0x50, NumberTypesEnum.u8);
+		if (Object.keys(NumberTypesEnum).includes(schemaType)) {
+			let number = Number(data);
+			if (!Number.isInteger(number)) {
+				this.buffWriter.number(0x64, NumberTypesEnum.u8); // d
+			} else if (number > 0) {
+				this.buffWriter.number(0x50, NumberTypesEnum.u8); // P
 			} else {
-				this.buffWriter.number(0x49, NumberTypesEnum.u8);
+				number = Math.abs(number);
+				this.buffWriter.number(0x49, NumberTypesEnum.u8); // I
 			}
 
-			this.buffWriter.number(data as number, schemaType as NumberTypes);
+			this.buffWriter.number(number, schemaType as NumberTypes);
 			return;
 		}
 
 		if (typeof schemaType === 'object') {
-			return this.toBufferInternalObject(data, key);
+			return this.toBufferInternalObject(data as DataType, key);
 		}
 
 		// Does not need a serialization
 		if (schemaType === 'string') {
-			return this.toBufferInternalString(data as string);
+			return this.toBufferInternalString(String(data));
 		}
 
 		if (schemaType === 'date') {
 			return this.toBufferInternalObjectDate(data as Date);
 		}
 
-		if (schemaType === 'bool') {
-			return this.toBufferInternalBoolean(data as boolean);
+		if (schemaType === 'bool' || schemaType === 'boolean') {
+			return this.toBufferInternalBoolean(Boolean(data));
 		}
 	}
 
 	// Serializer helper methods
-	private toBufferInternalObject(data, key?: string): void {
+	private toBufferInternalObject(data: DataType, key?: string): void {
 		if (Array.isArray(data)) {
 			return this.toBufferInternalArray(data, key);
 		}
@@ -147,19 +151,19 @@ export default class BufferSerializer {
 		return this.toBufferInternalObjectGeneric(data);
 	}
 
-	private toBufferInternalObjectGeneric(data: unknown): void {
+	private toBufferInternalObjectGeneric(data: DataType): void {
 		this.buffWriter.string('O');
 		const keys = Object.keys(data);
 
 		for (let i = 0; i < keys.length; i += 1) {
 			this.toBufferInternalKey(keys[i]);
-			this.serializeToTypedBuffer(data[keys[i]], keys[i]);
+			this.serializeToTypedBuffer(data[keys[i]] as string, keys[i]);
 		}
 
 		this.buffWriter.string('!');
 	}
 
-	private toBufferInternalArray(data: unknown[], key: string): void {
+	private toBufferInternalArray(data: Array<NestedDataObject | AvailableTypes>, key: string): void {
 		this.buffWriter.string('a'); // dense
 
 		if (typeof data[0] === 'object') {
@@ -286,7 +290,7 @@ export default class BufferSerializer {
 		return date;
 	}
 
-	private fromBufferInternalObjectGeneric(): unknown {
+	private fromBufferInternalObjectGeneric(): DataType {
 		const acc = {};
 		// Read until "!"
 		while (this.buffReader.lookup() !== 0x21) {
@@ -300,7 +304,7 @@ export default class BufferSerializer {
 		return acc;
 	}
 
-	private fromBufferInternalArrayDense(): unknown[] {
+	private fromBufferInternalArrayDense(): AvailableTypes[] | NestedDataObject[] {
 		const result = [];
 
 		while (this.buffReader.lookup() !== 0x21) {
