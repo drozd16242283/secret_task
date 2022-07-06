@@ -2,7 +2,7 @@ export type BufferSchema = { [key: string]: string | { [key: string]: string } }
 
 export type NumberTypes = 'u8' | 'u16' | 'u32' | 'double';
 
-export type AvailableTypes = number | boolean | string | Date;
+export type AvailableTypes = number | boolean | string | Set<number> | Map<AvailableTypes, AvailableTypes> | Date;
 
 export enum NumberTypesEnum {
 	u8 = 'u8',

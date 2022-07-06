@@ -2,6 +2,8 @@ import { BufferSchema, NumberTypes, NumberTypesEnum, DataType, AvailableTypes, N
 import { BufferWriter } from './buffer-writer';
 import { BufferReader } from './buffer-reader';
 
+const ENDING_MARKER = 0x21;
+
 export default class BufferSerializer {
 	private readonly schema: BufferSchema;
 	private buffWriter: BufferWriter;
@@ -57,11 +59,14 @@ export default class BufferSerializer {
 			case 0x61: // a = Array, dense
 				return this.fromBufferInternalArrayDense();
 
+			case 0x53: // S = Set
+				return this.fromSetInternal();
+
+			case 0x4D: // M = Map
+				return this.fromMapInternal();
+
 			case 0x64: // d = 8-byte double
 				return this.buffReader.number(NumberTypesEnum.double);
-
-			case 0x66: // f = false
-				return false;
 
 			case 0x69: // i = negative 16-bit integer
 				return - this.buffReader.number(NumberTypesEnum.u16);
@@ -74,6 +79,9 @@ export default class BufferSerializer {
 
 			case 0x74: // t = true
 				return true;
+
+			case 0x66: // f = false
+				return false;
 		}
 
 		throw new Error(`Unknown code: ${code}`);
@@ -124,7 +132,7 @@ export default class BufferSerializer {
 			return;
 		}
 
-		if (typeof schemaType === 'object') {
+		if (typeof schemaType === 'object' || schemaType === 'Set' || schemaType === 'Map') {
 			return this.toBufferInternalObject(data as DataType, key);
 		}
 
@@ -146,6 +154,18 @@ export default class BufferSerializer {
 	private toBufferInternalObject(data: DataType, key?: string): void {
 		if (Array.isArray(data)) {
 			return this.toBufferInternalArray(data, key);
+		}
+
+		if (data instanceof Set) {
+			return this.toSetInternal(data);
+		}
+
+		if (data instanceof Map) {
+			return this.toMapInternal(data, key);
+		}
+
+		if (data instanceof Date) {
+			return this.toBufferInternalObjectDate(data as Date);
 		}
 
 		return this.toBufferInternalObjectGeneric(data);
@@ -187,6 +207,29 @@ export default class BufferSerializer {
 		for (let i = 0; i < data.length; i++) {
 			this.serializeToTypedBuffer(data[i], null, key);
 		}
+
+		this.buffWriter.string('!');
+		return;
+	}
+
+	private toSetInternal(data: Set<AvailableTypes>): void {
+		this.buffWriter.string('S'); // Set
+
+		data.forEach((el) => {
+			this.serializeToTypedBuffer(el, null);
+		})
+
+		this.buffWriter.string('!');
+		return;
+	}
+
+	private toMapInternal(data: Map<any, AvailableTypes>, externalKey: string) {
+		this.buffWriter.string('M'); // Map
+
+		data.forEach((value, key) => {
+			this.serializeToBufferInternal(key);
+			this.serializeToTypedBuffer(value, key, externalKey);
+		});
 
 		this.buffWriter.string('!');
 		return;
@@ -293,7 +336,7 @@ export default class BufferSerializer {
 	private fromBufferInternalObjectGeneric(): DataType {
 		const acc = {};
 		// Read until "!"
-		while (this.buffReader.lookup() !== 0x21) {
+		while (this.buffReader.lookup() !== ENDING_MARKER) {
 			const key = this.deserializeFromBufferInternal() as string;
 			acc[key] = this.deserializeFromBufferInternal();
 		}
@@ -307,12 +350,37 @@ export default class BufferSerializer {
 	private fromBufferInternalArrayDense(): AvailableTypes[] | NestedDataObject[] {
 		const result = [];
 
-		while (this.buffReader.lookup() !== 0x21) {
+		while (this.buffReader.lookup() !== ENDING_MARKER) {
 			result.push(this.deserializeFromBufferInternal());
 		}
 
 		this.buffReader.skip();
 
 		return result;
+	}
+
+	private fromSetInternal(): Set<number | {}> {
+		const res = new Set();
+
+		while (this.buffReader.lookup() !== ENDING_MARKER) {
+			res.add(this.deserializeFromBufferInternal());
+		}
+
+		this.buffReader.skip();
+
+		return res;
+	}
+
+	private fromMapInternal(): Map<string, AvailableTypes> {
+		const res = new Map();
+
+		while (this.buffReader.lookup() !== ENDING_MARKER) {
+			const key = this.deserializeFromBufferInternal() as string;
+			res.set(key, this.deserializeFromBufferInternal());
+		}
+
+		this.buffReader.skip();
+
+		return res;
 	}
 }
