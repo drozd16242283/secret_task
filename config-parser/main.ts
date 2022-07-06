@@ -5,7 +5,7 @@ process.env.RABBITMQ_PASSWORD = 'password';
 type ConfigValues = {
 	value: unknown,
 	mod: MODE,
-	validate?: string;
+	validate?: RegExp | string; // REGEXP
 }
 
 type ConfigDataType = { [key: string]: ConfigValues }
@@ -26,6 +26,17 @@ export class Config {
 	parse(configData: ConfigDataType): void {
 		Object.keys(configData).forEach((key) => {
 			const value = process.env[key] || configData[key].value;
+
+			const validator = configData[key].validate;
+			if (configData[key] && validator) {
+				const regExp = validator instanceof RegExp
+					? validator as RegExp
+					: new RegExp(validator);
+				if (!regExp.test(value.toString())) {
+					throw new Error(`Validation of ${key} has failed!`);
+				}
+			}
+
 			Object.assign(this, {
 				[key]: value,
 			});
@@ -48,7 +59,6 @@ export const RABBITMQ = {
 	RABBITMQ_HOST: {
 		value: 'localhost', //
 		mod: MODE.READ | MODE.WRITE, //
-		validate: '', //
 	},
 	RABBITMQ_PORT: {
 		value: undefined as unknown as number,
@@ -57,6 +67,7 @@ export const RABBITMQ = {
 	RABBITMQ_USER: {
 		value: undefined as unknown as string,
 		mod: MODE.WRITE,
+		validate: /^[a-zA-Z0-9_.-]*$/, //
 	},
 	RABBITMQ_PASSWORD: {
 		value: undefined as unknown as string,
